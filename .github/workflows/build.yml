@@ -1,0 +1,62 @@
+name: Build AdStripper APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate sources
+        run: bash gen.sh AdStripper
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+
+      - name: Build debug + release
+        run: gradle -p AdStripper assembleDebug assembleRelease --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdStripper-debug-apk
+          if-no-files-found: warn
+          path: AdStripper/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload release APK (signed + minified)
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdStripper-release-apk
+          if-no-files-found: warn
+          path: AdStripper/app/build/outputs/apk/release/*.apk
+
+      - name: Upload sources zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdStripper-sources-zip
+          if-no-files-found: warn
+          path: AdStripper.zip
+
+      - name: Commit sources + keystore back
+        run: |
+          git config user.name "adstripper-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add AdStripper keystore.jks
+          git diff --cached --quiet || git commit -m "Add AdStripper sources + keystore [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
